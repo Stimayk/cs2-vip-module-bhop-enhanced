@@ -277,6 +277,7 @@ void vip_bhop::AllPluginsLoaded() {
     g_pVIPCore->VIP_RegisterFeature("bhop_cooldown_time", VIP_FLOAT, HIDE);
     g_pVIPCore->VIP_RegisterFeature("bhop_reset_time", VIP_FLOAT, HIDE);
     g_pVIPCore->VIP_RegisterFeature("bhop_max_speed", VIP_FLOAT, HIDE);
+    g_pVIPCore->VIP_RegisterFeature("bhop_jump_power", VIP_FLOAT, HIDE);
 
     g_pUtils->CreateTimer(0.0f, []() {
         if (g_pVIPCore && g_pVIPCore->VIP_IsVIPLoaded()) {
@@ -302,7 +303,7 @@ void vip_bhop::AllPluginsLoaded() {
                         ChangeVelocity(pPlayerPawn, maxSpeed);
                     }
                     
-                    pPlayerPawn->m_vecAbsVelocity().z = 300;
+                    pPlayerPawn->m_vecAbsVelocity().z = g_pVIPCore->VIP_GetClientFeatureFloat(iSlot, "bhop_jump_power");
                     user.JumpsCount++;
 
                     if (user.pResetTimer && g_pUtils) {
@@ -329,7 +330,7 @@ const char* vip_bhop::GetLicense() {
     return "Public";
 }
 const char* vip_bhop::GetVersion() {
-    return "1.0.1";
+    return "1.1.0";
 }
 const char* vip_bhop::GetDate() {
     return __DATE__;
