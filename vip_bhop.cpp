@@ -89,6 +89,7 @@ void ReplicateConVar(int playerSlot, const char* pszName, const char* pszValue) 
 
 void SetPlayerBhopState(int iSlot, bool bEnable) {
     ReplicateConVar(iSlot, "sv_autobunnyhopping", bEnable ? "1" : "0");
+    ReplicateConVar(iSlot, "sv_enablebunnyhopping", bEnable ? "1" : "0");
 }
 
 void ChangeVelocity(CCSPlayerPawnBase* pPawn, float newVelocity)
@@ -328,7 +329,7 @@ const char* vip_bhop::GetLicense() {
     return "Public";
 }
 const char* vip_bhop::GetVersion() {
-    return "1.0";
+    return "1.0.1";
 }
 const char* vip_bhop::GetDate() {
     return __DATE__;
