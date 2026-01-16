@@ -303,7 +303,7 @@ void vip_bhop::AllPluginsLoaded() {
                         ChangeVelocity(pPlayerPawn, maxSpeed);
                     }
                     
-                    pPlayerPawn->m_vecAbsVelocity().z = g_pVIPCore->VIP_GetClientFeatureFloat(iSlot, "bhop_jump_power");
+                    pPlayerPawn->m_vecAbsVelocity().z = g_pVIPCore->VIP_GetClientFeatureFloat(i, "bhop_jump_power");
                     user.JumpsCount++;
 
                     if (user.pResetTimer && g_pUtils) {
