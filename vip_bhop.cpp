@@ -302,7 +302,7 @@ const char* vip_bhop::GetLicense() {
     return "Public";
 }
 const char* vip_bhop::GetVersion() {
-    return "1.1.0";
+    return "v1.1.0";
 }
 const char* vip_bhop::GetDate() {
     return __DATE__;
