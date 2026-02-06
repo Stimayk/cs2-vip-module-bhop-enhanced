@@ -17,11 +17,19 @@ struct CTakeDamageInfoContainer;
 class CTakeDamageInfo;
 class IGameEventListener2;
 
+struct trace_info_t;
+
 /////////////////////////////////////////////////////////////////
 ///////////////////////      PLAYERS     //////////////////////////
 /////////////////////////////////////////////////////////////////
 
 typedef std::function<void(int iSlot, uint64 iSteamID64)> OnClientAuthorizedCallback;
+
+struct FakeConVar
+{
+    std::string szCvar;
+    std::string szValue;
+};
 
 #define PLAYERS_INTERFACE "IPlayersApi"
 class IPlayersApi
@@ -47,14 +55,24 @@ public:
     virtual void SetPlayerName(int iSlot, const char* szName) = 0;
     virtual void SetMoveType(int iSlot, MoveType_t moveType) = 0;
     virtual void EmitSound(std::vector<int> vPlayers, CEntityIndex ent, std::string sound_name, int pitch, float volume) = 0;
-    virtual void EmitSound(int iSlot, CEntityIndex ent, std::string sound_name, int pitch, float volume) = 0;
-    virtual void StopSoundEvent(int iSlot, const char* sound_name) = 0;
+	virtual void EmitSound(int iSlot, CEntityIndex ent, std::string sound_name, int pitch, float volume) = 0;
+	virtual void StopSoundEvent(int iSlot, const char* sound_name) = 0;
     virtual IGameEventListener2* GetLegacyGameEventListener(int iSlot) = 0;
     virtual int FindPlayer(uint64 iSteamID64) = 0;
     virtual int FindPlayer(const CSteamID* steamID) = 0;
     virtual int FindPlayer(const char* szName) = 0;
     virtual trace_info_t RayTrace(int iSlot) = 0;
     virtual bool UseClientCommand(int iSlot, const char* szCommand) = 0;
+    // bHook - если true, то вызов будет через хук OnTakeDamage с возможностью отмены, если false - прямой вызов функции нанесения урона без хуков
+    virtual void TakeDamage(int iSlot, CTakeDamageInfo* pInfo, bool bHook = true) = 0;
+    virtual void RemoveWeapons(int iSlot) = 0;
+    
+    virtual void SetConVar(int iSlot, FakeConVar cvar) = 0;
+    virtual void SetConVar(int iSlot, const char* name, const char* value) = 0;
+    virtual void SetConVar(std::vector<int> vPlayers, const char* name, const char* value) = 0;
+    virtual void SetConVar(std::vector<int> vPlayers, FakeConVar cvar) = 0;
+    virtual void SetConVars(int iSlot, std::vector<FakeConVar> cvars) = 0;
+    virtual void SetConVars(std::vector<int> vPlayers, std::vector<FakeConVar> cvars) = 0;
 };
 
 /////////////////////////////////////////////////////////////////
@@ -85,8 +103,8 @@ public:
     virtual CCSGameRules* GetCCSGameRules() = 0;
     virtual CGameEntitySystem* GetCGameEntitySystem() = 0;
     virtual CEntitySystem* GetCEntitySystem() = 0;
-    virtual CGlobalVars* GetCGlobalVars() = 0;
-    virtual IGameEventManager2* GetGameEventManager() = 0;
+	virtual CGlobalVars* GetCGlobalVars() = 0;
+	virtual IGameEventManager2* GetGameEventManager() = 0;
 
     virtual const char* GetLanguage() = 0;
 
@@ -103,17 +121,17 @@ public:
     virtual void ClearAllHooks(SourceMM::PluginId id) = 0;
 
     virtual void LoadTranslations(const char* szFile) = 0;
-    virtual void PrintToConsole(int iSlot, const char* msg, ...) = 0;
-    virtual void PrintToConsoleAll(const char* msg, ...) = 0;
-    virtual void PrintToCenter(int iSlot, const char* msg, ...) = 0;
-    virtual void PrintToCenterAll(const char* msg, ...) = 0;
-    virtual void PrintToCenterHtml(int iSlot, int iDuration, const char* msg, ...) = 0;
-    virtual void PrintToCenterHtmlAll(int iDuration, const char* msg, ...) = 0;
+	virtual void PrintToConsole(int iSlot, const char* msg, ...) = 0;
+	virtual void PrintToConsoleAll(const char* msg, ...) = 0;
+	virtual void PrintToCenter(int iSlot, const char* msg, ...) = 0;
+	virtual void PrintToCenterAll(const char* msg, ...) = 0;
+	virtual void PrintToCenterHtml(int iSlot, int iDuration, const char* msg, ...) = 0;
+	virtual void PrintToCenterHtmlAll(int iDuration, const char* msg, ...) = 0;
 
     virtual void LogToFile(const char* szFile, const char* szText, ...) = 0;
     virtual void ErrorLog(const char* msg, ...) = 0;
     virtual void PrintToAlert(int iSlot, const char *msg, ...) = 0;
-    virtual void PrintToAlertAll(const char *msg, ...) = 0;
+	virtual void PrintToAlertAll(const char *msg, ...) = 0;
     virtual void SetEntityModel(CBaseModelEntity* pEntity, const char* szModel) = 0;
     virtual void DispatchSpawn(CEntityInstance* pEntity, CEntityKeyValues*) = 0;
     virtual CBaseEntity* CreateEntityByName(const char *pClassName, CEntityIndex iForceEdictIndex) = 0;
@@ -127,7 +145,7 @@ public:
     virtual void TeleportEntity(CBaseEntity* pEnt, const Vector *position, const QAngle *angles, const Vector *velocity) = 0;
     virtual void HookIsHearingClient(SourceMM::PluginId id, OnHearingClientCallback callback) = 0;
     virtual const char* GetVersion() = 0;
-
+    
     virtual void MapEndHook(SourceMM::PluginId id, StartupCallback fn) = 0;
     virtual void MapStartHook(SourceMM::PluginId id, MapStartCallback fn) = 0;
 };
@@ -153,11 +171,11 @@ struct Items
 
 struct Menu
 {
-    std::string szTitle;
+    std::string szTitle;	
     std::vector<Items> hItems;
     bool bBack = false;
     bool bExit = false;
-    MenuCallbackFunc hFunc = nullptr;
+	MenuCallbackFunc hFunc = nullptr;
 
     void clear() {
         szTitle.clear();
@@ -183,19 +201,28 @@ struct MenuPlayer
     }
 };
 
+enum class MenuType : int
+{
+    CHAT = 0,
+    CENTER = 1,
+    CENTER_WASD = 2,
+};
+
 class IMenusApi
 {
 public:
-    virtual void AddItemMenu(Menu& hMenu, const char* sBack, const char* sText, int iType = 1) = 0;
-    virtual void DisplayPlayerMenu(Menu& hMenu, int iSlot, bool bClose = true) = 0;
-    virtual void SetExitMenu(Menu& hMenu, bool bExit) = 0;
-    virtual void SetBackMenu(Menu& hMenu, bool bBack) = 0;
-    virtual void SetTitleMenu(Menu& hMenu, const char* szTitle) = 0;
-    virtual void SetCallback(Menu& hMenu, MenuCallbackFunc func) = 0;
+	virtual void AddItemMenu(Menu& hMenu, const char* sBack, const char* sText, int iType = 1) = 0;
+	virtual void DisplayPlayerMenu(Menu& hMenu, int iSlot, bool bClose = true) = 0;
+	virtual void SetExitMenu(Menu& hMenu, bool bExit) = 0;
+	virtual void SetBackMenu(Menu& hMenu, bool bBack) = 0;
+	virtual void SetTitleMenu(Menu& hMenu, const char* szTitle) = 0;
+	virtual void SetCallback(Menu& hMenu, MenuCallbackFunc func) = 0;
     virtual void ClosePlayerMenu(int iSlot) = 0;
     virtual std::string escapeString(const std::string& input) = 0;
     virtual bool IsMenuOpen(int iSlot) = 0;
-    virtual void DisplayPlayerMenu(Menu& hMenu, int iSlot, bool bClose = true, bool bReset = true) = 0;
+	virtual void DisplayPlayerMenu(Menu& hMenu, int iSlot, bool bClose = true, bool bReset = true) = 0;
+    virtual void AddRawItemMenu(Menu &hMenu, const char* sBack, const char* sText, int iType = 1) = 0;
+    virtual MenuType GetMenuType(int iSlot) = 0;
 };
 
 /////////////////////////////////////////////////////////////////

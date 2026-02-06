@@ -2,21 +2,19 @@
 #include <string>
 #include "vip_bhop.h"
 #include "schemasystem/schemasystem.h"
-#include <networksystem/inetworkserializer.h>
-#include <networksystem/inetworkmessages.h>
-#include "protobuf/generated/networkbasetypes.pb.h"
 #include <igameeventsystem.h>
-#include <irecipientfilter.h>
+#include "include/vip.h"
+#include "include/menus.h"
 
 vip_bhop g_vip_bhop;
 
 IVIPApi* g_pVIPCore;
 IUtilsApi* g_pUtils;
+IPlayersApi* g_pPlayers;
 
 IVEngineServer2* engine = nullptr;
 CGameEntitySystem* g_pGameEntitySystem = nullptr;
 CEntitySystem* g_pEntitySystem = nullptr;
-extern INetworkMessages* g_pNetworkMessages;
 IGameEventSystem* g_pGameEventSystem = nullptr;
 
 PLUGIN_EXPOSE(vip_bhop, g_vip_bhop);
@@ -44,7 +42,6 @@ bool vip_bhop::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
     GET_V_IFACE_CURRENT(GetEngineFactory, engine, IVEngineServer2, SOURCE2ENGINETOSERVER_INTERFACE_VERSION);
     GET_V_IFACE_CURRENT(GetFileSystemFactory, g_pFullFileSystem, IFileSystem, FILESYSTEM_INTERFACE_VERSION);
     GET_V_IFACE_CURRENT(GetServerFactory, g_pSource2Server, ISource2Server, SOURCE2SERVER_INTERFACE_VERSION);
-    GET_V_IFACE_CURRENT(GetEngineFactory, g_pNetworkMessages, INetworkMessages, NETWORKMESSAGES_INTERFACE_VERSION);
     GET_V_IFACE_ANY(GetEngineFactory, g_pGameEventSystem, IGameEventSystem, GAMEEVENTSYSTEM_INTERFACE_VERSION);
 
     if (g_SMAPI)
@@ -52,43 +49,12 @@ bool vip_bhop::Load(PluginId id, ISmmAPI* ismm, char* error, size_t maxlen, bool
     return true;
 }
 
-void ReplicateConVar(int playerSlot, const char* pszName, const char* pszValue) {
-    if (!g_pNetworkMessages || !pszName || !pszValue) return;
-
-    INetworkMessageInternal* pNetMsg = g_pNetworkMessages->FindNetworkMessagePartial("SetConVar");
-    if (!pNetMsg) return;
-
-    CNetMessage* pMsg = pNetMsg->AllocateMessage();
-    if (!pMsg) return;
-
-    CNETMsg_SetConVar* data = pMsg->ToPB<CNETMsg_SetConVar>();
-    if (!data) return;
-
-    CMsg_CVars_CVar* cvarMsg = data->mutable_convars()->add_cvars();
-    if (!cvarMsg) return;
-
-    cvarMsg->set_name(pszName);
-    cvarMsg->set_value(pszValue);
-
-    CPlayerBitVec filter;
-    filter.Set(playerSlot);
-
-    if (g_pGameEventSystem) {
-        g_pGameEventSystem->PostEventAbstract(
-            -1,
-            false,
-            1,
-            reinterpret_cast<const uint64*>(filter.Base()),
-            pNetMsg,
-            reinterpret_cast<const CNetMessage*>(pMsg),
-            0u,
-            NetChannelBufType_t::BUF_RELIABLE
-        );
-    }
-}
-
 void SetPlayerBhopState(int iSlot, bool bEnable) {
-    ReplicateConVar(iSlot, "sv_autobunnyhopping", bEnable ? "1" : "0");
+    if (g_pPlayers) {
+        const char* val = bEnable ? "1" : "0";
+        g_pPlayers->SetConVar(iSlot, "sv_autobunnyhopping", val);
+        g_pPlayers->SetConVar(iSlot, "sv_enablebunnyhopping", val);
+    }
 }
 
 void ChangeVelocity(CCSPlayerPawnBase* pPawn, float newVelocity)
@@ -222,8 +188,8 @@ bool vip_bhop::Unload(char* error, size_t maxlen) {
 
     g_pUtils = nullptr;
     g_pVIPCore = nullptr;
+    g_pPlayers = nullptr;
     g_pGameEventSystem = nullptr;
-    g_pNetworkMessages = nullptr;
 
     return true;
 }
@@ -269,6 +235,13 @@ void vip_bhop::AllPluginsLoaded() {
         return;
     }
 
+    g_pPlayers = reinterpret_cast<IPlayersApi*>(g_SMAPI->MetaFactory(PLAYERS_INTERFACE, &ret, nullptr));
+    if (ret == META_IFACE_FAILED || !g_pPlayers) {
+        g_pUtils->ErrorLog("[%s] Failed to lookup players api. Aborting", GetLogTag());
+        engine->ServerCommand(MakeMetaUnloadCommand(g_PLID).c_str());
+        return;
+    }
+
     g_pVIPCore->VIP_OnVIPLoaded(VIP_OnVIPLoaded);
     g_pVIPCore->VIP_RegisterFeature("bhop_enhanced", VIP_BOOL, TOGGLABLE, nullptr, OnToggle);
     g_pVIPCore->VIP_RegisterFeature("bhop_max_jumps", VIP_INT, HIDE);
@@ -276,6 +249,7 @@ void vip_bhop::AllPluginsLoaded() {
     g_pVIPCore->VIP_RegisterFeature("bhop_cooldown_time", VIP_FLOAT, HIDE);
     g_pVIPCore->VIP_RegisterFeature("bhop_reset_time", VIP_FLOAT, HIDE);
     g_pVIPCore->VIP_RegisterFeature("bhop_max_speed", VIP_FLOAT, HIDE);
+    g_pVIPCore->VIP_RegisterFeature("bhop_jump_power", VIP_FLOAT, HIDE);
 
     g_pUtils->CreateTimer(0.0f, []() {
         if (g_pVIPCore && g_pVIPCore->VIP_IsVIPLoaded()) {
@@ -301,7 +275,7 @@ void vip_bhop::AllPluginsLoaded() {
                         ChangeVelocity(pPlayerPawn, maxSpeed);
                     }
                     
-                    pPlayerPawn->m_vecAbsVelocity().z = 300;
+                    pPlayerPawn->m_vecAbsVelocity().z = g_pVIPCore->VIP_GetClientFeatureFloat(i, "bhop_jump_power");
                     user.JumpsCount++;
 
                     if (user.pResetTimer && g_pUtils) {
@@ -328,7 +302,7 @@ const char* vip_bhop::GetLicense() {
     return "Public";
 }
 const char* vip_bhop::GetVersion() {
-    return "1.0";
+    return "1.1.0";
 }
 const char* vip_bhop::GetDate() {
     return __DATE__;
